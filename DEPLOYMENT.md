@@ -1,14 +1,14 @@
 # Triển khai agent Part 6
 
-**Nền tảng chính** Railway, với agent FastAPI và Redis trong cùng project.
+**Nền tảng chính** Railway Trial, với agent FastAPI và Redis trong project `k5-day14-agent`, môi trường `production`. [Dashboard Railway](https://railway.com/project/474a9d82-73ab-4ef2-9ea7-d6ec33c5e577).
 
-**URL công khai** Chưa xác minh. Cần đăng nhập Railway để tạo dịch vụ và lấy URL.
+**URL công khai** https://agent-production-8a157829.up.railway.app
 
 ## Cấu hình
 
 Triển khai thư mục `06-lab-complete/` dùng Dockerfile và `railway.toml`. Health check của nền tảng gọi `/health`. Kiểm tra `/ready` để xác nhận agent kết nối được Redis.
 
-| Biến | Thiết lập trên service agent |
+| Biến | Thiết lập trên service agent (Railway production) |
 | --- | --- |
 | `AGENT_API_KEY` | Chuỗi ngẫu nhiên lưu trong Railway Variables |
 | `REDIS_URL` | Tham chiếu URL riêng của Redis trong cùng project |
@@ -38,7 +38,7 @@ Dùng tên service Redis thực tế trong biến tham chiếu nếu tên khác 
 
 ## Lệnh xác minh CP6
 
-Đặt `BASE` là URL public và `AGENT_API_KEY` là key trong phiên shell. Kết quả mong đợi theo thứ tự là 200, 200, 401, 200.
+Đặt `BASE` là URL public ở đầu trang và `AGENT_API_KEY` là key trong phiên shell. Kết quả thực đo ngày 25/11/2026 (GMT+7) là 200, 200, 401, 200.
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' "$BASE/health"
@@ -50,4 +50,11 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/ask" \
   -d '{"question":"Hello"}'
 ```
 
-Bộ chấm local đã chạy với Docker trên Linux và báo PASS 12/12. Mục triển khai thực tế chờ URL, kết quả bốn lệnh và ba ảnh `dashboard.png`, `running.png`, `test.png`.
+| Kiểm tra trên Railway | HTTP |
+| --- | ---: |
+| `GET /health` | 200 |
+| `GET /ready` | 200 |
+| `POST /ask` thiếu API key | 401 |
+| `POST /ask` với API key hợp lệ | 200 |
+
+`/ready` trả `{"status":"ready","redis":"connected"}`. Bộ chấm gốc đã báo PASS 12/12 khi chạy với Docker trên Linux.

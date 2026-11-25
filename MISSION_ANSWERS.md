@@ -91,7 +91,7 @@ POST http://127.0.0.1/ask    → HTTP/1.1 200 OK, Server: nginx
 
 ### 3.1. Railway
 
-Xem tình trạng URL, cấu hình và lệnh kiểm tra CP6 trong [DEPLOYMENT.md](DEPLOYMENT.md).
+Agent Part 6 đã chạy trên Railway tại https://agent-production-8a157829.up.railway.app. Bốn HTTP code thực đo là 200, 200, 401 và 200. [Cấu hình và kết quả CP6](DEPLOYMENT.md).
 
 ### 3.2. So sánh Railway và Render
 
