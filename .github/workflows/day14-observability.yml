@@ -1,0 +1,33 @@
+name: Day 14 observability evidence
+
+on:
+  push:
+    branches: [lab-evidence]
+    paths:
+      - '.github/workflows/day14-observability.yml'
+      - '.github/lab-evidence/observability.py'
+      - '06-lab-complete/benchmark-observability/production/**'
+
+permissions:
+  contents: read
+
+jobs:
+  observability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Measure scaling, traces and alerts
+        working-directory: 06-lab-complete/benchmark-observability/production
+        run: python -u "$GITHUB_WORKSPACE/.github/lab-evidence/observability.py"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: observability
+          path: ${{ runner.temp }}/observability
