@@ -72,7 +72,7 @@ token=$(jq -er .access_token <<< "$auth_response")
 kill -TERM "$pid"
 wait "$pid" || true
 
-(cd 05-scaling-reliability/develop && exec python -m uvicorn app:app) > "$out/part5-develop.log" 2>&1 &
+(cd 05-scaling-reliability/develop && exec python app.py) > "$out/part5-develop.log" 2>&1 &
 pid=$!
 wait_http "$base/health"
 {
@@ -80,7 +80,7 @@ wait_http "$base/health"
   printf '\n'
   curl -sSi "$base/ready"
 } > "$out/part5-probes.txt"
-curl -sSi -X POST "$base/ask?question=Long%20task" > "$out/part5-shutdown.txt" &
+curl --max-time 10 -sSi -X POST "$base/ask?question=Long%20task" > "$out/part5-shutdown.txt" &
 request_pid=$!
 sleep 0.05
 kill -TERM "$pid"
@@ -97,5 +97,11 @@ wait "$pid" || true
   python test_stateless.py | tee "$out/part5-stateless.txt"
   replica=$(docker compose -p k5-day14-scaling ps -q agent | head -n 1)
   docker stop "$replica"
-  python test_stateless.py | tee "$out/part5-after-stop.txt"
+  session=$(sed -n 's/^Session ID: //p' "$out/part5-stateless.txt")
+  test -n "$session"
+  curl -fsS http://127.0.0.1:8080/chat -H 'Content-Type: application/json' \
+    -d "$(jq -nc --arg id "$session" '{session_id:$id,question:"Can this same session continue?"}')" \
+    | jq '{session_id,served_by,message_count}' | tee "$out/part5-after-stop.txt"
+  curl -fsS "http://127.0.0.1:8080/chat/$session/history" \
+    | jq -e 'select(.count == 12) | {session_id,count}' | tee -a "$out/part5-after-stop.txt"
 )
