@@ -1,0 +1,42 @@
+name: Quality gate
+
+on:
+  pull_request:
+    paths:
+      - '06-lab-complete/benchmark-observability/develop/**'
+      - 'reports/eval_v2.json'
+      - '.github/workflows/quality-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - '06-lab-complete/benchmark-observability/develop/**'
+      - 'reports/eval_v2.json'
+      - '.github/workflows/quality-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Check accuracy and regressions
+        working-directory: 06-lab-complete/benchmark-observability/develop
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          AGENT_VERSION=v2 MOCK_ERROR_RATE=0 PORT=8002 python app.py &
+          agent_pid=$!
+          trap 'kill "$agent_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:8002/health
+          python eval/run_eval.py --url http://127.0.0.1:8002 --min-accuracy 1.0 \
+            --baseline ../../../reports/eval_v2.json --out "$RUNNER_TEMP/eval_ci.json"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: quality-gate
+          path: ${{ runner.temp }}/eval_ci.json
