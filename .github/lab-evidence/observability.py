@@ -125,6 +125,8 @@ def save_trace(page, entry, kind):
         page.get_by_text("Details", exact=True).last.click()
         event_section = page.get_by_text(re.compile(r"^(Events|Logs)\b", re.I)).first
         event_section.click(timeout=8000)
+        entry = page.locator(".AccordionEvents--content .AccordionAttributes--header").first
+        entry.click(timeout=8000)
         page.get_by_text(re.compile(r"\bexception\b", re.I)).first.wait_for(timeout=8000)
     page.wait_for_timeout(1000)
     page.screenshot(path=SCREENSHOTS / f"jaeger-{kind}-trace.png", full_page=True)
