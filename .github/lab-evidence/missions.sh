@@ -63,7 +63,7 @@ wait_http "$base/health"
 auth_response=$(curl -fsS -H 'Content-Type: application/json' -d '{"username":"student","password":"demo123"}' "$base/auth/token")
 token=$(jq -er .access_token <<< "$auth_response")
 {
-  jq 'del(.access_token)' <<< "$auth_response"
+  jq 'del(.access_token,.hint)' <<< "$auth_response"
   for i in {1..20}; do
     printf '\nRequest %s\n' "$i"
     curl -sSi -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$payload" "$base/ask"

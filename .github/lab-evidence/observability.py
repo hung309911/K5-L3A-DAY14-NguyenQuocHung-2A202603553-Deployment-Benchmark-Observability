@@ -5,8 +5,10 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -168,9 +170,9 @@ def configure(values):
     return started
 
 
-def main(page):
-    print("Starting the observability stack with one replica")
-    compose("up", "-d", "--build", "--scale", "agent=1")
+def start():
+    print("Starting the observability stack")
+    compose("up", "-d", "--build", "--scale", "agent=2")
     wait_for(lambda: read(HEALTH), timeout=75)
     wait_for(lambda: read(f"{GRAFANA}/api/health"))
     wait_for(lambda: read(f"{PROM}/api/v1/targets"))
@@ -186,12 +188,34 @@ def main(page):
             stdout=f, stderr=subprocess.STDOUT, check=False,
         )
 
+def query(expression):
+    return read(f"{PROM}/api/v1/query?{urlencode({'query': expression})}")["data"]["result"]
+
+
+def baseline(page):
+    active = locust("grafana_baseline", 30, 5, "1m15s")
+    time.sleep(55)
+    dashboard = f"{GRAFANA}/d/day14-agent-overview/agent-overview?from=now-5m&to=now&refresh=5s"
+    shot(page, dashboard, "grafana-dashboard.png", text="Traffic (req/s)")
+    requests = 'http_requests_total{job="agent",route="/ask"}'
+    seconds = 'http_request_duration_seconds'
+    latency = '{job="agent",route="/ask"}[1m]'
+    observations["grafana_baseline"] = {
+        "rps_per_instance": query(f"sum by (instance) (rate({requests}[1m]))"),
+        "p95_ms": float(query(f"histogram_quantile(0.95, sum by (le) (rate({seconds}_bucket{latency})))")[0]["value"][1]) * 1000,
+        "avg_ms": float(query(f"sum(rate({seconds}_sum{latency})) / sum(rate({seconds}_count{latency}))")[0]["value"][1]) * 1000,
+        "tokens_per_second": query('sum by (type) (rate(llm_tokens_total{job="agent"}[1m]))'),
+    }
+    try:
+        read("http://127.0.0.1:8080/metrics")
+    except HTTPError as exc:
+        observations["public_metrics_http_status"] = exc.code
+    save()
+    active.wait(timeout=45)
+    compose("up", "-d", "--scale", "agent=1")
+    time.sleep(18)
     print("Locust 100 users, scale 1")
-    first = locust("scale_1", 100, 10, "2m")
-    time.sleep(65)
-    dash = f"{GRAFANA}/d/day14-agent-overview/agent-overview?from=now-5m&to=now&refresh=5s"
-    shot(page, dash, "grafana-dashboard.png", text="Traffic (req/s)")
-    finish_scaling(first, "scale_1")
+    finish_scaling(locust("scale_1", 100, 10, "2m"), "scale_1")
 
     print("Locust 100 users, scale 3")
     compose("up", "-d", "--scale", "agent=3")
@@ -215,6 +239,7 @@ def main(page):
         span["operationName"].startswith("chat ") for span in t["spans"]
     )), "error")
 
+def alerts(page):
     print("Starting combined A/B faults under load")
     initial = firing()
     locust_a_b = locust("faults_a_b", 30, 5, "3m")
@@ -269,7 +294,11 @@ with sync_playwright() as browser_tool:
     browser = browser_tool.chromium.launch()
     page = browser.new_page(viewport={"width": 1600, "height": 1050}, device_scale_factor=1)
     try:
-        main(page)
+        start()
+        if sys.argv[1] == "baseline":
+            baseline(page)
+        else:
+            alerts(page)
     finally:
         with (OUT / "compose.log").open("w") as f:
             compose("logs", "--tail=40", stdout=f, stderr=subprocess.STDOUT)

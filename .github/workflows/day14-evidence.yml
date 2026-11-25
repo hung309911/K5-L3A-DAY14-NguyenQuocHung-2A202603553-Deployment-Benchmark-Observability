@@ -4,6 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches: [lab-evidence]
+    paths:
+      - '.github/workflows/day14-evidence.yml'
+      - '.github/lab-evidence/missions.sh'
+      - '.github/lab-evidence/benchmark.sh'
 
 permissions:
   contents: read
