@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        phase: [cost-and-quality]
+        phase: [tracing]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

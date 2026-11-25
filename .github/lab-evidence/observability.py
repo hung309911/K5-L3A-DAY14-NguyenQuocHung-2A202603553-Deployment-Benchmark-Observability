@@ -3,6 +3,7 @@
 import csv
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -12,7 +13,6 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from playwright.sync_api import TimeoutError as BrowserTimeout
 from playwright.sync_api import sync_playwright
 
 COMPOSE = ["docker", "compose", "-p", "k5-day14-observability"]
@@ -122,10 +122,10 @@ def save_trace(page, entry, kind):
     model.wait_for(timeout=25_000)
     model.click()
     if kind == "error":
-        try:
-            page.get_by_text("Logs", exact=False).last.click(timeout=3000)
-        except BrowserTimeout:
-            pass
+        page.get_by_text("Details", exact=True).last.click()
+        event_section = page.get_by_text(re.compile(r"^(Events|Logs)\b", re.I)).first
+        event_section.click(timeout=8000)
+        page.get_by_text(re.compile(r"\bexception\b", re.I)).first.wait_for(timeout=8000)
     page.wait_for_timeout(1000)
     page.screenshot(path=SCREENSHOTS / f"jaeger-{kind}-trace.png", full_page=True)
     observations[f"{kind}_trace"] = {
