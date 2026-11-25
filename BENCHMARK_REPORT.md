@@ -109,10 +109,10 @@ Trace chậm `263f01f6658f66084acedf43f61199d6` kéo dài **1710.51 ms**. Span `
 {"ts":"2026-11-25T15:47:38.264512+00:00","level":"INFO","service":"observable-agent","instance":"6e71a40caa02","event":"llm_call","trace_id":"263f01f6658f66084acedf43f61199d6","span_id":"7f755ac19ca84d94","request_id":"079601d3c947","model":"mock-llm-small","agent_version":"v2","input_tokens":76,"output_tokens":39,"cost_usd":3.5E-05,"llm_ms":1692.8}
 ```
 
-Trace lỗi `b04e1af3ca15eaa76cd344e21da70edc` kết thúc với HTTP 503. Span model mất **72.69 ms** và có event `exception`. Jaeger API ghi `exception.type=utils.mock_llm.LLMError` và thông điệp `Upstream LLM error: 503 Service Unavailable (mock)`. Log `llm_error` mang cùng `trace_id`. [Ảnh trace lỗi](screenshots/jaeger-error-trace.png).
+Trace lỗi `d1a65633b8a5f8f5aff398349f3675ed` kéo dài **111,13 ms**. Span `chat mock-llm-small` mất **90,16 ms**. Jaeger hiển thị event `exception` với `exception.type=utils.mock_llm.LLMError` và thông điệp `Upstream LLM error: 503 Service Unavailable (mock)`. Log `llm_error` mang cùng `trace_id`. [Ảnh trace lỗi](screenshots/jaeger-error-trace.png) · [Lượt chụp](https://github.com/hung309911/K5-L3A-DAY14-NguyenQuocHung-2A202603553-Deployment-Benchmark-Observability/actions/runs/45653924832).
 
 ```json
-{"ts":"2026-11-25T15:47:33.542161+00:00","level":"INFO","service":"observable-agent","instance":"6c439d797263","event":"llm_error","trace_id":"b04e1af3ca15eaa76cd344e21da70edc","span_id":"4e7b3dcdab684166","request_id":"ca33955ca365","error":"Upstream LLM error: 503 Service Unavailable (mock)"}
+{"ts":"2026-11-25T16:28:14.954247+00:00","level":"INFO","service":"observable-agent","instance":"eb1e1f33c298","event":"llm_error","trace_id":"d1a65633b8a5f8f5aff398349f3675ed","span_id":"15459521169fd8fb","request_id":"da7e78e6200d","error":"Upstream LLM error: 503 Service Unavailable (mock)"}
 ```
 
 ## 5. Benchmark scaling bằng Locust
