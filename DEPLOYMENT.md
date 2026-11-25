@@ -58,3 +58,9 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/ask" \
 | `POST /ask` với API key hợp lệ | 200 |
 
 `/ready` trả `{"status":"ready","redis":"connected"}`. Bộ chấm gốc đã báo PASS 12/12 khi chạy với Docker trên Linux.
+
+## Ảnh triển khai
+
+- Dashboard Railway hiển thị môi trường production với 2/2 dịch vụ online. [Dashboard](screenshots/dashboard.png)
+- Kết quả readiness trên URL công khai, Redis đã kết nối. [Agent running](screenshots/running.png)
+- Bốn kết quả thực đo bằng curl và response tương ứng. API key đã được che. [Kiểm tra API](screenshots/test.png)
