@@ -70,7 +70,7 @@ def locust(name, users, rate, duration):
     try:
         return subprocess.Popen(
             [
-                *COMPOSE, "run", "--rm", "locust", "-f", "/mnt/locust/locustfile.py",
+                *COMPOSE, "run", "--rm", "--no-deps", "locust", "-f", "/mnt/locust/locustfile.py",
                 "--host", "http://nginx", "--headless", "-u", str(users), "-r", str(rate),
                 "-t", duration, "--csv", f"/mnt/results/{name}",
             ],
@@ -92,54 +92,62 @@ def finish_scaling(process, name):
     shutil.copyfile(stats, OUT / stats.name)
 
 
-def trace_query(params):
-    return read(f"{JAEGER}/api/traces?{urlencode(params)}").get("data", [])
-
-
-def trace_duration(trace):
-    spans = trace["spans"]
-    return max(s["startTime"] + s["duration"] for s in spans) - min(s["startTime"] for s in spans)
-
-
-def save_trace(page, trace, kind):
-    trace_id = trace["traceID"]
-    model_span = max(
-        (span for span in trace["spans"] if span["operationName"].startswith("chat ")),
-        key=lambda span: span["duration"],
-    )
+def agent_events():
     logs = compose("logs", "--no-color", "--no-log-prefix", "agent", capture_output=True).stdout
-    event = "llm_error" if kind == "error" else "llm_call"
-    entries = []
-    for line in logs.splitlines():
-        if not line.startswith("{") or trace_id not in line:
-            continue
-        row = json.loads(line)
-        if row.get("trace_id") == trace_id:
-            entries.append(row)
-    match = next((row for row in entries if row.get("event") == event), None)
-    if match is None and entries:
-        match = entries[0]
-    trace_url = f"{JAEGER}/trace/{trace_id}"
-    page.goto(trace_url, wait_until="domcontentloaded")
-    model = page.get_by_text(model_span["operationName"], exact=True).first
-    try:
-        model.wait_for(timeout=20_000)
-        model.click()
-        if kind == "error":
+    return [json.loads(line) for line in logs.splitlines() if line.startswith("{")]
+
+
+def trace_spans(trace_id):
+    url = f"{JAEGER}/api/v3/traces/{trace_id}"
+    with urlopen(url, timeout=5) as response:
+        chunks = [json.loads(line) for line in response if line.strip()]
+    return [
+        span
+        for chunk in chunks
+        for resource in chunk.get("result", chunk).get("resourceSpans", [])
+        for scope in resource["scopeSpans"]
+        for span in scope["spans"]
+    ]
+
+
+def save_trace(page, entry, kind):
+    trace_id = entry["trace_id"]
+    spans = wait_for(lambda: trace_spans(trace_id))
+    model_span = next(s for s in spans if s["name"].startswith("chat "))
+    start = min(int(s["startTimeUnixNano"]) for s in spans)
+    end = max(int(s["endTimeUnixNano"]) for s in spans)
+    span_duration = int(model_span["endTimeUnixNano"]) - int(model_span["startTimeUnixNano"])
+    page.goto(f"{JAEGER}/trace/{trace_id}", wait_until="domcontentloaded")
+    model = page.get_by_text(model_span["name"], exact=True).first
+    model.wait_for(timeout=25_000)
+    model.click()
+    if kind == "error":
+        try:
             page.get_by_text("Logs", exact=False).last.click(timeout=3000)
-    except BrowserTimeout:
-        pass
+        except BrowserTimeout:
+            pass
     page.wait_for_timeout(1000)
     page.screenshot(path=SCREENSHOTS / f"jaeger-{kind}-trace.png", full_page=True)
     observations[f"{kind}_trace"] = {
         "trace_id": trace_id,
-        "duration_ms": trace_duration(trace) / 1000,
-        "span": model_span["operationName"],
-        "span_ms": model_span["duration"] / 1000,
-        "span_events": model_span.get("logs", []),
-        "matching_log": match,
+        "duration_ms": (end - start) / 1_000_000,
+        "span": model_span["name"],
+        "span_ms": span_duration / 1_000_000,
+        "span_events": model_span.get("events", []),
+        "matching_log": entry,
     }
     save()
+
+
+def tracing(page):
+    process = locust("traces", 30, 5, "40s")
+    process.wait(timeout=75)
+    time.sleep(6)
+    events = [row for row in agent_events() if row.get("trace_id")]
+    slow = max((row for row in events if row["event"] == "llm_call"), key=lambda row: row["llm_ms"])
+    error = next(row for row in events if row["event"] == "llm_error")
+    save_trace(page, slow, "slow")
+    save_trace(page, error, "error")
 
 
 def firing():
@@ -212,32 +220,27 @@ def baseline(page):
         observations["public_metrics_http_status"] = exc.code
     save()
     active.wait(timeout=45)
-    compose("up", "-d", "--scale", "agent=1")
-    time.sleep(18)
-    print("Locust 100 users, scale 1")
-    finish_scaling(locust("scale_1", 100, 10, "2m"), "scale_1")
 
-    print("Locust 100 users, scale 3")
-    compose("up", "-d", "--scale", "agent=3")
-    time.sleep(18)
-    finish_scaling(locust("scale_3", 100, 10, "2m"), "scale_3")
-    observations["agent_targets_at_scale_3"] = [
-        target["scrapeUrl"] for target in read(f"{PROM}/api/v1/targets")["data"]["activeTargets"]
-        if target["labels"]["job"] == "agent" and target["health"] == "up"
-    ]
-    save()
 
-    services = read(f"{JAEGER}/api/services")["data"]
-    service = "observable-agent" if "observable-agent" in services else next(
-        name for name in services if name != "jaeger"
-    )
-    params = {"service": service, "limit": 100, "lookback": "1h"}
-    slow = trace_query({**params, "minDuration": "1s"})
-    save_trace(page, max(slow, key=trace_duration), "slow")
-    errors = trace_query({**params, "tags": json.dumps({"error": "true"})})
-    save_trace(page, next(t for t in errors if any(
-        span["operationName"].startswith("chat ") for span in t["spans"]
-    )), "error")
+def live_targets():
+    targets = read(f"{PROM}/api/v1/targets")["data"]["activeTargets"]
+    return [t["scrapeUrl"] for t in targets if t["labels"]["job"] == "agent" and t["health"] == "up"]
+
+
+def scaling():
+    for replicas in (1, 3):
+        print(f"Locust 100 users, scale {replicas}")
+        compose("up", "-d", "--scale", f"agent={replicas}")
+        wait_for(lambda: len(live_targets()) == replicas)
+        before = live_targets()
+        name = f"scale_{replicas}"
+        finish_scaling(locust(name, 100, 10, "2m"), name)
+        after = live_targets()
+        if len(after) != replicas:
+            raise RuntimeError(f"Replica count changed during Locust: {before} -> {after}")
+        observations[f"agent_targets_at_scale_{replicas}"] = after
+        save()
+
 
 def alerts(page):
     print("Starting combined A/B faults under load")
@@ -295,7 +298,12 @@ with sync_playwright() as browser_tool:
     page = browser.new_page(viewport={"width": 1600, "height": 1050}, device_scale_factor=1)
     try:
         start()
-        if sys.argv[1] == "baseline":
+        phase = sys.argv[1]
+        if phase == "scaling":
+            scaling()
+        elif phase == "tracing":
+            tracing(page)
+        elif phase == "baseline":
             baseline(page)
         else:
             alerts(page)
