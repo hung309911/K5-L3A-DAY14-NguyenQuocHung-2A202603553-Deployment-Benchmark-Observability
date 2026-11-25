@@ -1,0 +1,66 @@
+name: Day 14 lab evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lab-evidence]
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Run unmodified production checker
+        working-directory: 06-lab-complete
+        run: |
+          set -o pipefail
+          pip install -r requirements.txt
+          python check_production_ready.py | tee "$RUNNER_TEMP/readiness.txt"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: readiness
+          path: ${{ runner.temp }}/readiness.txt
+
+  missions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Run Parts 1, 2, 4 and 5
+        run: bash .github/lab-evidence/missions.sh
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: mission-evidence
+          path: ${{ runner.temp }}/missions
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Run local performance and quality benchmarks
+        run: bash .github/lab-evidence/benchmark.sh
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: benchmark
+          path: ${{ runner.temp }}/benchmark
+
