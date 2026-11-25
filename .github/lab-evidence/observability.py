@@ -117,6 +117,15 @@ def save_trace(page, entry, kind):
     start = min(int(s["startTimeUnixNano"]) for s in spans)
     end = max(int(s["endTimeUnixNano"]) for s in spans)
     span_duration = int(model_span["endTimeUnixNano"]) - int(model_span["startTimeUnixNano"])
+    observations[f"{kind}_trace"] = {
+        "trace_id": trace_id,
+        "duration_ms": (end - start) / 1_000_000,
+        "span": model_span["name"],
+        "span_ms": span_duration / 1_000_000,
+        "span_events": model_span.get("events", []),
+        "matching_log": entry,
+    }
+    save()
     page.goto(f"{JAEGER}/trace/{trace_id}", wait_until="domcontentloaded")
     model = page.get_by_text(model_span["name"], exact=True).first
     model.wait_for(timeout=25_000)
@@ -130,15 +139,6 @@ def save_trace(page, entry, kind):
         row.get_by_text(re.compile(r"\bexception\b", re.I)).first.wait_for(timeout=8000)
     page.wait_for_timeout(1000)
     page.screenshot(path=SCREENSHOTS / f"jaeger-{kind}-trace.png", full_page=True)
-    observations[f"{kind}_trace"] = {
-        "trace_id": trace_id,
-        "duration_ms": (end - start) / 1_000_000,
-        "span": model_span["name"],
-        "span_ms": span_duration / 1_000_000,
-        "span_events": model_span.get("events", []),
-        "matching_log": entry,
-    }
-    save()
 
 
 def tracing(page):
