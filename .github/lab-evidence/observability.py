@@ -293,6 +293,39 @@ def alerts(page):
     save()
 
 
+def reset_prometheus():
+    compose("rm", "-f", "-s", "-v", "prometheus")
+    compose("up", "-d", "--no-deps", "prometheus")
+    wait_for(lambda: len(live_targets()) == 3)
+
+
+def cost_and_quality():
+    print("Applying large model with an isolated Prometheus database")
+    configure({"LLM_MODEL": "mock-llm-large"})
+    reset_prometheus()
+    started = time.monotonic()
+    process = locust("fault_c", 30, 5, "3m")
+    observations["fault_c"] = watch({"LLMCostBurnRateHigh"}, started, 175)
+    observations["cost_rate_usd_per_hour"] = query('sum(rate(llm_cost_usd_total{job="agent"}[5m])) * 3600')
+    observations["cost_agent_info"] = query("agent_info")
+    save()
+    process.wait(timeout=60)
+
+    print("Applying v1 with an isolated Prometheus database")
+    configure({"AGENT_VERSION": "v1"})
+    reset_prometheus()
+    process = locust("fault_e", 30, 5, "2m")
+    fired = set()
+    started = time.monotonic()
+    while time.monotonic() - started < 120:
+        fired.update(firing())
+        time.sleep(5)
+    observations["fault_e"] = {"seconds_observed": 120, "alerts_firing": sorted(fired)}
+    observations["v1_agent_info"] = query("agent_info")
+    assert {item["metric"]["version"] for item in observations["v1_agent_info"]} == {"v1"}
+    save()
+    process.wait(timeout=60)
+
 with sync_playwright() as browser_tool:
     browser = browser_tool.chromium.launch()
     page = browser.new_page(viewport={"width": 1600, "height": 1050}, device_scale_factor=1)
@@ -303,6 +336,8 @@ with sync_playwright() as browser_tool:
             scaling()
         elif phase == "tracing":
             tracing(page)
+        elif phase == "cost-and-quality":
+            cost_and_quality()
         elif phase == "baseline":
             baseline(page)
         else:
